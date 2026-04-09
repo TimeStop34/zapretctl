@@ -58,11 +58,10 @@ def create_parser():
     cfg_set.add_argument("--no-restart", action="store_true")
     cfg_edit = cfg_sub.add_parser("edit")
     cfg_edit.add_argument("file_type", choices=["strategy", "hostlist", "exclude", "custom-strategy", "custom-hostlist"])
-    cfg_up = cfg_sub.add_parser("up-from-file", help="Загрузить конфигурацию zapretctl из JSON-файла")
-    cfg_up.add_argument("path", help="Путь к JSON-файлу")
-    cfg_down = cfg_sub.add_parser("down-to-file", help="Сохранить конфигурацию zapretctl в JSON-файл")
-    cfg_down.add_argument("path", help="Путь для сохранения")
-
+    cfg_up = cfg_sub.add_parser("up-from-file", help="Загрузить конфигурацию zapretctl из JSON-файла (по умолчанию /opt/zapretctl/config.json)")
+    cfg_up.add_argument("path", nargs="?", default="/opt/zapretctl/config.json", help="Путь к JSON-файлу")
+    cfg_down = cfg_sub.add_parser("down-to-file", help="Сохранить конфигурацию zapretctl в JSON-файл (по умолчанию /opt/zapretctl/config.json)")
+    cfg_down.add_argument("path", nargs="?", default="/opt/zapretctl/config.json", help="Путь для сохранения")
 
     # list
     lst_parser = subparsers.add_parser("list")

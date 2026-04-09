@@ -1,15 +1,18 @@
 """Управление конфигурацией zapret."""
 
 import shutil
+import re
+import json
 from pathlib import Path
 from typing import List
+import os
 
 from .utils import (
     print_output, require_root, get_firewall_type, sha256sum, run_cmd,
     detect_init_system
 )
 from .constants import (
-    ZAPRET_CONFIG_FILE, ZAPRET_HOSTS_USER_FILE, ZAPRET_HOSTS_EXCLUDE_FILE,
+    ZAPRET_CONFIG_FILE, ZAPRETCTL_CONFIG_FILE, ZAPRET_HOSTS_USER_FILE, ZAPRET_HOSTS_EXCLUDE_FILE,
     ZAPRET_GAME_IPSET_FILE, ZAPRET_CFGS_CONFIG_DIR, ZAPRET_CFGS_LISTS_DIR,
     ZAPRET_DIR
 )
@@ -180,40 +183,108 @@ def cmd_set(args):
 def cmd_edit(args):
     edit_file(args.file_type)
 
-def load_config_from_file(path: str):
-    """Загружает конфигурацию zapretctl из JSON-файла."""
+def _normalize_config(content: str) -> str:
+    """Удаляет строку FWTYPE для сравнения."""
+    lines = content.splitlines()
+    filtered = [line for line in lines if not line.startswith('FWTYPE=')]
+    return '\n'.join(filtered)
+
+def export_state_to_file(path: str):
+    """Сохраняет текущее состояние Zapret в JSON-файл."""
+    state = {
+        "strategy": None,
+        "hostlist": None,
+        "game_mode": False,
+        "firewall_type": None,
+        "custom_hosts": [],
+        "custom_exclude": []
+    }
+    # Текущая стратегия и файрвол
+    if ZAPRET_CONFIG_FILE.exists():
+            cur_content = ZAPRET_CONFIG_FILE.read_text()
+            cur_normalized = _normalize_config(cur_content)
+            matched = False
+            for cfg_file in ZAPRET_CFGS_CONFIG_DIR.glob("*"):
+                if cfg_file.is_file():
+                    cfg_content = cfg_file.read_text()
+                    cfg_normalized = _normalize_config(cfg_content)
+                    if cur_normalized == cfg_normalized:
+                        state["strategy"] = cfg_file.name
+                        matched = True
+                        break
+            if not matched:
+                state["strategy"] = "custom"
+                state["custom_strategy_content"] = cur_content
+            # FWTYPE сохраняем отдельно
+            m = re.search(r'^FWTYPE=(\S+)', cur_content, re.MULTILINE)
+            if m:
+                state["firewall_type"] = m.group(1)
+    # Текущий хостлист
+    if ZAPRET_HOSTS_USER_FILE.exists():
+        cur_hash = sha256sum(ZAPRET_HOSTS_USER_FILE)
+        for lst_file in ZAPRET_CFGS_LISTS_DIR.glob("list*"):
+            if lst_file.is_file() and sha256sum(lst_file) == cur_hash:
+                state["hostlist"] = lst_file.name
+                break
+        # Если не совпал ни с одним стандартным, считаем что это кастомный
+        if not state["hostlist"]:
+            state["hostlist"] = "custom"
+            state["custom_hosts"] = ZAPRET_HOSTS_USER_FILE.read_text().splitlines()
+    else:
+        state["hostlist"] = "custom"
+        state["custom_hosts"] = []
+    # Игровой режим
+    if ZAPRET_GAME_IPSET_FILE.exists():
+        state["game_mode"] = "0.0.0.0/0" in ZAPRET_GAME_IPSET_FILE.read_text()
+    # Исключения
+    if ZAPRET_HOSTS_EXCLUDE_FILE.exists():
+        state["custom_exclude"] = ZAPRET_HOSTS_EXCLUDE_FILE.read_text().splitlines()
+    # Сохраняем в файл
+    dst = Path(path)
+    try:
+        with open(dst, 'w', encoding='utf-8') as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
+        print_output(f"Состояние Zapret сохранено в {dst}")
+    except Exception as e:
+        print_output(f"Ошибка сохранения: {e}", error=True)
+
+def import_state_from_file(path: str):
+    """Загружает состояние Zapret из JSON-файла и применяет его."""
     src = Path(path)
     if not src.exists():
         print_output(f"Файл не найден: {path}", error=True)
         return
     try:
         with open(src, 'r', encoding='utf-8') as f:
-            config = json.load(f)
+            state = json.load(f)
     except Exception as e:
         print_output(f"Ошибка чтения JSON: {e}", error=True)
         return
-    ZAPRETCTL_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(ZAPRETCTL_CONFIG_FILE, 'w', encoding='utf-8') as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
-    print_output(f"Конфигурация загружена из {src}")
-
-def save_config_to_file(path: str):
-    """Сохраняет текущую конфигурацию zapretctl в JSON-файл."""
-    if not ZAPRETCTL_CONFIG_FILE.exists():
-        print_output("Файл конфигурации zapretctl не существует.", error=True)
-        return
-    dst = Path(path)
-    try:
-        shutil.copy(ZAPRETCTL_CONFIG_FILE, dst)
-    except Exception as e:
-        print_output(f"Ошибка сохранения: {e}", error=True)
-        return
-    print_output(f"Конфигурация сохранена в {dst}")
-
-def cmd_up_from_file(args):
-    load_config_from_file(args.path)
+    require_root()
+    # Применяем стратегию
+    if state.get("strategy"):
+        set_strategy(state["strategy"], no_restart=True)
+    # Применяем хостлист
+    if state.get("hostlist"):
+        if state["hostlist"] == "custom":
+            ZAPRET_HOSTS_USER_FILE.write_text("\n".join(state.get("custom_hosts", [])) + "\n")
+        else:
+            set_hostlist(state["hostlist"], no_restart=True)
+    # Игровой режим
+    if "game_mode" in state:
+        set_game_mode(state["game_mode"], no_restart=True)
+    # Тип файрвола
+    if state.get("firewall_type"):
+        set_firewall_type(state["firewall_type"], no_restart=True)
+    # Исключения
+    if "custom_exclude" in state:
+        ZAPRET_HOSTS_EXCLUDE_FILE.write_text("\n".join(state["custom_exclude"]) + "\n")
+    # Перезапуск сервиса
+    service_action_cmd("restart")
+    print_output("Состояние Zapret успешно загружено и применено.")
 
 def cmd_down_to_file(args):
-    save_config_to_file(args.path)
+    export_state_to_file(args.path)
 
-
+def cmd_up_from_file(args):
+    import_state_from_file(args.path)
