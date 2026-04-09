@@ -179,3 +179,41 @@ def cmd_set(args):
 
 def cmd_edit(args):
     edit_file(args.file_type)
+
+def load_config_from_file(path: str):
+    """Загружает конфигурацию zapretctl из JSON-файла."""
+    src = Path(path)
+    if not src.exists():
+        print_output(f"Файл не найден: {path}", error=True)
+        return
+    try:
+        with open(src, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        print_output(f"Ошибка чтения JSON: {e}", error=True)
+        return
+    ZAPRETCTL_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(ZAPRETCTL_CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=2, ensure_ascii=False)
+    print_output(f"Конфигурация загружена из {src}")
+
+def save_config_to_file(path: str):
+    """Сохраняет текущую конфигурацию zapretctl в JSON-файл."""
+    if not ZAPRETCTL_CONFIG_FILE.exists():
+        print_output("Файл конфигурации zapretctl не существует.", error=True)
+        return
+    dst = Path(path)
+    try:
+        shutil.copy(ZAPRETCTL_CONFIG_FILE, dst)
+    except Exception as e:
+        print_output(f"Ошибка сохранения: {e}", error=True)
+        return
+    print_output(f"Конфигурация сохранена в {dst}")
+
+def cmd_up_from_file(args):
+    load_config_from_file(args.path)
+
+def cmd_down_to_file(args):
+    save_config_to_file(args.path)
+
+

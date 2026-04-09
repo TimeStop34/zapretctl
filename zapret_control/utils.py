@@ -130,3 +130,13 @@ def parse_address_list(input_str: str) -> List[str]:
     # заменяем разделители , | на пробелы и разбиваем
     normalized = re.sub(r'[,|]', ' ', input_str)
     return [addr.strip() for addr in normalized.split() if addr.strip()]
+
+def is_ip_address(addr: str) -> bool:
+    """Проверяет, является ли строка IP-адресом (IPv4 или IPv6)."""
+    import ipaddress
+    try:
+        ipaddress.ip_address(addr)
+        return True
+    except ValueError:
+        return False
+
