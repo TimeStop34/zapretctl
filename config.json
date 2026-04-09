@@ -1,0 +1,6 @@
+{
+  "default_strategy": "general",
+  "default_hostlist": "list-basic.txt",
+  "editor": "nano",
+  "auto_restart": true
+}
