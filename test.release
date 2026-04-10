@@ -1,0 +1,137 @@
+{
+  "results": [
+    {
+      "name": "zapretctl --help",
+      "status": "PASS"
+    },
+    {
+      "name": "zapretctl --version",
+      "status": "PASS"
+    },
+    {
+      "name": "zapretctl --json general version",
+      "status": "PASS"
+    },
+    {
+      "name": "general status",
+      "status": "PASS"
+    },
+    {
+      "name": "general version",
+      "status": "PASS"
+    },
+    {
+      "name": "service status",
+      "status": "PASS"
+    },
+    {
+      "name": "service start",
+      "status": "PASS"
+    },
+    {
+      "name": "service stop",
+      "status": "PASS"
+    },
+    {
+      "name": "service restart",
+      "status": "PASS"
+    },
+    {
+      "name": "service enable",
+      "status": "PASS"
+    },
+    {
+      "name": "service disable",
+      "status": "PASS"
+    },
+    {
+      "name": "config list strategies",
+      "status": "PASS"
+    },
+    {
+      "name": "config list hostlists",
+      "status": "PASS"
+    },
+    {
+      "name": "config show",
+      "status": "PASS"
+    },
+    {
+      "name": "config show --all",
+      "status": "PASS"
+    },
+    {
+      "name": "config set strategy general",
+      "status": "PASS"
+    },
+    {
+      "name": "config set game-mode off",
+      "status": "PASS"
+    },
+    {
+      "name": "config up-from-file",
+      "status": "FAIL"
+    },
+    {
+      "name": "config down-to-file /tmp/zapret-test.json",
+      "status": "PASS"
+    },
+    {
+      "name": "list show hosts",
+      "status": "PASS"
+    },
+    {
+      "name": "list show exclude",
+      "status": "PASS"
+    },
+    {
+      "name": "list search hosts google",
+      "status": "PASS"
+    },
+    {
+      "name": "list add hosts test.local --no-restart",
+      "status": "PASS"
+    },
+    {
+      "name": "list remove hosts test.local --no-restart",
+      "status": "PASS"
+    },
+    {
+      "name": "check run --help",
+      "status": "PASS"
+    },
+    {
+      "name": "check domain --help",
+      "status": "PASS"
+    },
+    {
+      "name": "debug init-info",
+      "status": "PASS"
+    },
+    {
+      "name": "debug dump-state",
+      "status": "PASS"
+    },
+    {
+      "name": "install --help",
+      "status": "PASS"
+    },
+    {
+      "name": "install install --help",
+      "status": "PASS"
+    },
+    {
+      "name": "install update --help",
+      "status": "PASS"
+    },
+    {
+      "name": "install uninstall --help",
+      "status": "PASS"
+    }
+  ],
+  "summary": {
+    "fail": 1,
+    "pass": 31,
+    "skip": 0
+  }
+}

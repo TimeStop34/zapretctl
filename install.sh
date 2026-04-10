@@ -1,37 +1,37 @@
 #!/bin/sh
 set -e
 
-# Установочный скрипт для zapretctl
-# Использование:
-#   ./install.sh                - установка с sudo (если не root)
-#   ./install.sh --sudo doas    - использовать doas вместо sudo
-#   ./install.sh --sudo "su -c" - использовать su -c
-
 REPO_URL="https://github.com/TimeStop34/zapretctl.git"
 INSTALL_DIR="/opt/zapretctl"
 BIN_PATH="/usr/local/bin/zapretctl"
+TEST_BIN_PATH="/usr/local/bin/zapretctl-test"
+TEST_SCRIPT="$INSTALL_DIR/zapretctl-test"
+RELEASE_FILE="$INSTALL_DIR/test.release"
 
 SUDO_CMD=""
 if [ "$(id -u)" -ne 0 ]; then
     SUDO_CMD="sudo"
 fi
 
-# Обработка аргументов
+SELF_TEST_ONLY=0
+SKIP_SELF_TEST=0
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --sudo)
-            if [ -n "$2" ]; then
-                SUDO_CMD="$2"
-                shift
-            else
-                echo "Ошибка: --sudo требует аргумент (например, doas)"
-                exit 1
-            fi
+            [ -n "$2" ] || { echo "Ошибка: --sudo требует аргумент"; exit 1; }
+            SUDO_CMD="$2"
+            shift
+            ;;
+        --self-test-only)
+            SELF_TEST_ONLY=1
+            ;;
+        --skip-self-test)
+            SKIP_SELF_TEST=1
             ;;
         -h|--help)
             echo "Установщик zapretctl"
-            echo "Использование: $0 [--sudo КОМАНДА]"
-            echo "  --sudo КОМАНДА   использовать указанную команду для повышения прав (например, doas, su -c)"
+            echo "Использование: $0 [--sudo КОМАНДА] [--self-test-only] [--skip-self-test]"
             exit 0
             ;;
         *)
@@ -42,48 +42,95 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-# Проверка наличия git
-if ! command -v git >/dev/null 2>&1; then
-    echo "Ошибка: git не установлен. Установите git и повторите попытку."
-    exit 1
-fi
+if ! command -v git >/dev/null 2>&1; then echo "Ошибка: git не установлен."; exit 1; fi
+if ! command -v python3 >/dev/null 2>&1; then echo "Ошибка: python3 не установлен."; exit 1; fi
 
-# Проверка наличия python3
-if ! command -v python3 >/dev/null 2>&1; then
-    echo "Ошибка: python3 не установлен. Установите python3 и повторите попытку."
-    exit 1
-fi
-
-echo "Установка zapretctl из $REPO_URL в $INSTALL_DIR"
-
-# Если директория уже существует, обновляем её
-if [ -d "$INSTALL_DIR" ]; then
-    echo "Обнаружена существующая установка в $INSTALL_DIR, выполняется обновление..."
-    if [ -d "$INSTALL_DIR/.git" ]; then
-        cd "$INSTALL_DIR"
-        $SUDO_CMD git pull origin main || {
-            echo "Не удалось обновить через git pull. Выполняется свежая установка..."
+# Клонирование/обновление
+if [ $SELF_TEST_ONLY -eq 0 ]; then
+    echo "Установка zapretctl из $REPO_URL в $INSTALL_DIR"
+    if [ -d "$INSTALL_DIR" ]; then
+        echo "Обнаружена существующая установка, обновление..."
+        if [ -d "$INSTALL_DIR/.git" ]; then
+            cd "$INSTALL_DIR"
+            $SUDO_CMD git pull origin main || {
+                echo "Не удалось обновить, удаляю и клонирую заново..."
+                $SUDO_CMD rm -rf "$INSTALL_DIR"
+            }
+        else
             $SUDO_CMD rm -rf "$INSTALL_DIR"
-        }
+        fi
+    fi
+    if [ ! -d "$INSTALL_DIR" ]; then
+        $SUDO_CMD git clone "$REPO_URL" "$INSTALL_DIR"
+    fi
+
+    # Установка прав исполнения
+    $SUDO_CMD chmod +x "$INSTALL_DIR/zapretctl.py"
+    $SUDO_CMD chmod +x "$TEST_SCRIPT"
+
+    # Создание симлинков
+    for link in "$BIN_PATH" "$TEST_BIN_PATH"; do
+        if [ -e "$link" ] || [ -L "$link" ]; then
+            $SUDO_CMD rm -f "$link"
+        fi
+    done
+    $SUDO_CMD ln -sf "$INSTALL_DIR/zapretctl.py" "$BIN_PATH"
+    $SUDO_CMD ln -sf "$TEST_SCRIPT" "$TEST_BIN_PATH"
+fi
+
+# Функция самотестирования
+run_self_test() {
+    echo "Запуск самотестирования..."
+    if [ ! -x "$TEST_SCRIPT" ]; then
+        echo "Ошибка: тестовый скрипт не найден или не исполняемый."
+        return 1
+    fi
+
+    CURRENT_JSON=$($SUDO_CMD $TEST_SCRIPT --json 2>/dev/null) || {
+        echo "Ошибка выполнения тестового скрипта."
+        return 1
+    }
+
+    if [ ! -f "$RELEASE_FILE" ]; then
+        echo "Файл test.release не найден, пропускаем сверку."
+        return 0
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq не установлен, невозможно сравнить JSON. Установите jq для проверки."
+        return 0
+    fi
+
+    CURRENT_NORM=$(echo "$CURRENT_JSON" | jq --sort-keys .)
+    RELEASE_NORM=$(jq --sort-keys . "$RELEASE_FILE")
+
+    if [ "$CURRENT_NORM" = "$RELEASE_NORM" ]; then
+        echo "✅ Самотестирование пройдено: вывод совпадает с test.release."
+        return 0
     else
-        echo "Директория не является git-репозиторием, удаляю..."
-        $SUDO_CMD rm -rf "$INSTALL_DIR"
+        echo "❌ Ошибка: вывод теста не совпадает с test.release!"
+        echo "Различия:"
+        diff <(echo "$CURRENT_NORM") <(echo "$RELEASE_NORM") || true
+        return 1
+    fi
+}
+
+if [ $SELF_TEST_ONLY -eq 1 ]; then
+    run_self_test
+    exit $?
+fi
+
+if [ $SKIP_SELF_TEST -eq 0 ]; then
+    if ! run_self_test; then
+        echo ""
+        echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        echo "ВНИМАНИЕ: Самотестирование выявило расхождения."
+        echo "Установка прервана. Проверьте целостность репозитория."
+        echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+        exit 1
     fi
 fi
 
-# Клонирование (если директория не существует)
-if [ ! -d "$INSTALL_DIR" ]; then
-    $SUDO_CMD git clone "$REPO_URL" "$INSTALL_DIR"
-fi
-
-# Установка прав на исполнение для главного скрипта
-$SUDO_CMD chmod +x "$INSTALL_DIR/zapretctl.py"
-
-# Создание символической ссылки
-if [ -e "$BIN_PATH" ] || [ -L "$BIN_PATH" ]; then
-    $SUDO_CMD rm -f "$BIN_PATH"
-fi
-$SUDO_CMD ln -sf "$INSTALL_DIR/zapretctl.py" "$BIN_PATH"
-
 echo "zapretctl успешно установлен в $BIN_PATH"
-echo "Проверьте установку, выполнив: zapretctl --help"
+echo "zapretctl-test успешно установлен в $TEST_BIN_PATH"
+echo "Проверьте: zapretctl --help"
